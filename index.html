@@ -27,6 +27,7 @@
     .popup dd { margin:0; }
     .popup a { color:#1F4E3D; }
     .approx { color:#8a5a12; font-weight:600; }
+    .closed-banner { color:#7a1f1f; background:#f8e8e8; font-weight:600; font-family:system-ui,sans-serif; font-size:13px; padding:4px 8px; border-radius:4px; margin:0 0 8px; }
     .leaflet-popup-content { min-width:240px; }
   </style>
 </head>
@@ -34,7 +35,7 @@
   <div id="app">
     <header>
       <h1>South Africa cannabis shops and clubs</h1>
-      <p>Once-off public map compiled on 19 November 2026 from published directories and official store locators. A pin is not a licence check and not legal advice. Missing contact fields are shown as Not found.</p>
+      <p>Once-off public map compiled on 19 November 2026 from published directories, official store locators, Google Maps listings and shop websites. A pin is not a licence check and not legal advice. Missing contact fields are shown as Not found. Shops Google marks as permanently closed are kept and labelled.</p>
     </header>
     <div class="filters">
       <label>Type
@@ -43,6 +44,7 @@
       <label>Province
         <select id="provFilter"><option value="">All provinces</option></select>
       </label>
+      <label><input type="checkbox" id="hideClosed"> Hide permanently closed</label>
       <span id="count"></span>
     </div>
     <div id="map"></div>
@@ -67,17 +69,35 @@
     function esc(s) {
       return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
+    function linkOrText(kind, value) {
+      if (!value || value === 'Not found') return '<dd>Not found</dd>';
+      if (kind === 'email') {
+        const first = String(value).split(';')[0].trim();
+        return `<dd><a href="mailto:${esc(first)}">${esc(value)}</a></dd>`;
+      }
+      if (kind === 'phone' || kind === 'whatsapp') {
+        const digits = String(value).replace(/\D/g,'');
+        let tel = digits;
+        if (tel.startsWith('0') && tel.length === 10) tel = '27' + tel.slice(1);
+        const href = kind === 'whatsapp' ? `https://wa.me/${tel}` : `tel:+${tel}`;
+        return `<dd><a href="${esc(href)}">${esc(value)}</a></dd>`;
+      }
+      return `<dd>${esc(value)}</dd>`;
+    }
     function popupHtml(p) {
       const approx = p.approximate ? `<div class="approx">Coordinates are approximate (${esc(p.precision)})</div>` : `<div>GPS: ${esc(p.lat)}, ${esc(p.lng)} (${esc(p.precision)})</div>`;
       const dir = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(p.lat + ',' + p.lng)}`;
       const web = p.website && p.website !== 'Not found' ? `<dd><a href="${esc(p.website)}" target="_blank" rel="noopener">Website / social</a></dd>` : `<dd>Not found</dd>`;
+      const closed = p.closed ? `<div class="closed-banner">Permanently closed (per Google)</div>` : '';
       return `<div class="popup">
         <h2>${esc(p.name)}</h2>
+        ${closed}
         <div class="type">${esc(p.type)}</div>
         <dl>
-          <dt>Email</dt><dd>${esc(p.email)}</dd>
+          <dt>Email</dt>${linkOrText('email', p.email)}
           <dt>Physical address</dt><dd>${esc(p.address)}</dd>
-          <dt>Phone</dt><dd>${esc(p.phone)}</dd>
+          <dt>Phone</dt>${linkOrText('phone', p.phone)}
+          <dt>WhatsApp</dt>${linkOrText('whatsapp', p.whatsapp)}
           <dt>Website or social</dt>${web}
           <dt>GPS</dt><dd>${approx}</dd>
         </dl>
@@ -86,10 +106,10 @@
     }
     function markerFor(f) {
       const p = f.properties;
-      const color = typeColors[p.type] || '#444';
+      const color = p.closed ? '#6b6b6b' : (typeColors[p.type] || '#444');
       const icon = L.divIcon({
         className: '',
-        html: `<div style="background:${color};width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 1px ${color};${p.approximate?'opacity:.8;':''}"></div>`,
+        html: `<div style="background:${color};width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 1px ${color};${p.approximate||p.closed?'opacity:.75;':''}"></div>`,
         iconSize: [14, 14],
         iconAnchor: [7, 7]
       });
@@ -98,17 +118,25 @@
     function applyFilters() {
       const t = document.getElementById('typeFilter').value;
       const p = document.getElementById('provFilter').value;
+      const hideClosed = document.getElementById('hideClosed').checked;
       cluster.clearLayers();
-      let n = 0, a = 0;
+      let n = 0, a = 0, c = 0;
       allFeatures.forEach(f => {
         const pr = f.properties;
         if (t && pr.type !== t) return;
         if (p && pr.province !== p) return;
+        if (hideClosed && pr.closed) return;
         cluster.addLayer(markerFor(f));
         n++;
         if (pr.approximate) a++;
+        if (pr.closed) c++;
       });
-      document.getElementById('count').textContent = n + ' pins shown' + (a ? ` (${a} approximate)` : '');
+      let msg = n + ' pins shown';
+      const bits = [];
+      if (a) bits.push(a + ' approximate');
+      if (c) bits.push(c + ' permanently closed');
+      if (bits.length) msg += ' (' + bits.join(', ') + ')';
+      document.getElementById('count').textContent = msg;
     }
     fetch('shops.json').then(r => r.json()).then(data => {
       allFeatures = data.features || [];
@@ -120,6 +148,7 @@
       provs.forEach(v => { const o=document.createElement('option'); o.value=v; o.textContent=v; ps.appendChild(o); });
       ts.addEventListener('change', applyFilters);
       ps.addEventListener('change', applyFilters);
+      document.getElementById('hideClosed').addEventListener('change', applyFilters);
       applyFilters();
     });
   </script>
