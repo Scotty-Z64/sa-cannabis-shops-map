@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>South Africa cannabis shops map — 19 November 2026</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+  <style>
+    :root { --bg:#10231c; --panel:#173328; --ink:#f4f7f5; --muted:#b7c7bf; --line:#2c5346; --accent:#c4a35a; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; height:100%; font-family: Georgia, "Times New Roman", serif; background:var(--bg); color:var(--ink); }
+    #app { display:flex; flex-direction:column; height:100%; }
+    header { padding:14px 18px 10px; background:var(--panel); border-bottom:1px solid var(--line); }
+    header h1 { margin:0 0 4px; font-size:22px; font-weight:normal; }
+    header p { margin:0; color:var(--muted); font-size:14px; max-width:90ch; }
+    .filters { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; padding:10px 18px; background:#13281f; border-bottom:1px solid var(--line); font-family: system-ui, sans-serif; font-size:14px; }
+    .filters label { display:flex; align-items:center; gap:6px; }
+    select { background:#0e1f19; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px 8px; }
+    #count { margin-left:auto; color:var(--muted); }
+    #map { flex:1; }
+    .popup h2 { margin:0 0 6px; font-size:16px; }
+    .popup .type { color:#1F4E3D; background:#e8f0eb; display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-family:system-ui,sans-serif; margin-bottom:8px; }
+    .popup dl { margin:0; font-family:system-ui,sans-serif; font-size:13px; }
+    .popup dt { color:#666; margin-top:6px; }
+    .popup dd { margin:0; }
+    .popup a { color:#1F4E3D; }
+    .approx { color:#8a5a12; font-weight:600; }
+    .leaflet-popup-content { min-width:240px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>South Africa cannabis shops and clubs</h1>
+      <p>Once-off public map compiled on 19 November 2026 from published directories and official store locators. A pin is not a licence check and not legal advice. Missing contact fields are shown as Not found.</p>
+    </header>
+    <div class="filters">
+      <label>Type
+        <select id="typeFilter"><option value="">All types</option></select>
+      </label>
+      <label>Province
+        <select id="provFilter"><option value="">All provinces</option></select>
+      </label>
+      <span id="count"></span>
+    </div>
+    <div id="map"></div>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script>
+    const map = L.map('map').setView([-28.5, 24.7], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+    const cluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 48 });
+    map.addLayer(cluster);
+    const typeColors = {
+      'medical dispensary': '#1f4e3d',
+      'club': '#6b3fa0',
+      'retail shop': '#b08a00',
+      'CBD-hemp shop': '#2a6f97'
+    };
+    let allFeatures = [];
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function popupHtml(p) {
+      const approx = p.approximate ? `<div class="approx">Coordinates are approximate (${esc(p.precision)})</div>` : `<div>GPS: ${esc(p.lat)}, ${esc(p.lng)} (${esc(p.precision)})</div>`;
+      const dir = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(p.lat + ',' + p.lng)}`;
+      const web = p.website && p.website !== 'Not found' ? `<dd><a href="${esc(p.website)}" target="_blank" rel="noopener">Website / social</a></dd>` : `<dd>Not found</dd>`;
+      return `<div class="popup">
+        <h2>${esc(p.name)}</h2>
+        <div class="type">${esc(p.type)}</div>
+        <dl>
+          <dt>Email</dt><dd>${esc(p.email)}</dd>
+          <dt>Physical address</dt><dd>${esc(p.address)}</dd>
+          <dt>Phone</dt><dd>${esc(p.phone)}</dd>
+          <dt>Website or social</dt>${web}
+          <dt>GPS</dt><dd>${approx}</dd>
+        </dl>
+        <p><a href="${dir}" target="_blank" rel="noopener">Directions</a></p>
+      </div>`;
+    }
+    function markerFor(f) {
+      const p = f.properties;
+      const color = typeColors[p.type] || '#444';
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="background:${color};width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 1px ${color};${p.approximate?'opacity:.8;':''}"></div>`,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7]
+      });
+      return L.marker([p.lat, p.lng], { icon, title: p.name }).bindPopup(popupHtml(p), { maxWidth: 320 });
+    }
+    function applyFilters() {
+      const t = document.getElementById('typeFilter').value;
+      const p = document.getElementById('provFilter').value;
+      cluster.clearLayers();
+      let n = 0, a = 0;
+      allFeatures.forEach(f => {
+        const pr = f.properties;
+        if (t && pr.type !== t) return;
+        if (p && pr.province !== p) return;
+        cluster.addLayer(markerFor(f));
+        n++;
+        if (pr.approximate) a++;
+      });
+      document.getElementById('count').textContent = n + ' pins shown' + (a ? ` (${a} approximate)` : '');
+    }
+    fetch('shops.json').then(r => r.json()).then(data => {
+      allFeatures = data.features || [];
+      const types = [...new Set(allFeatures.map(f => f.properties.type))].sort();
+      const provs = [...new Set(allFeatures.map(f => f.properties.province))].sort();
+      const ts = document.getElementById('typeFilter');
+      const ps = document.getElementById('provFilter');
+      types.forEach(v => { const o=document.createElement('option'); o.value=v; o.textContent=v; ts.appendChild(o); });
+      provs.forEach(v => { const o=document.createElement('option'); o.value=v; o.textContent=v; ps.appendChild(o); });
+      ts.addEventListener('change', applyFilters);
+      ps.addEventListener('change', applyFilters);
+      applyFilters();
+    });
+  </script>
+</body>
+</html>
